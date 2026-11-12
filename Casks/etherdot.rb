@@ -1,6 +1,6 @@
 cask "etherdot" do
-  version "1.0.0"
-  sha256 "1f7005803e5dc11e46c11a1356b74c358938af8257e57c9ecb17ff936f9a7562"
+  version "1.0.1"
+  sha256 "af042d8ea3599936fc4b5448cadb8f40feb8e03cde5bbf9ea76fbd9701bb3515"
 
   url "https://github.com/tfig-dev/EtherDot/releases/download/v#{version}/EtherDot-#{version}.dmg"
   name "EtherDot"
