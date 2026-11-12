@@ -15,7 +15,7 @@ jobs:
     name: Build and test
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Toolchain
         run: |
@@ -23,7 +23,7 @@ jobs:
           swift --version
 
       - name: Cache Swift packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .build
           key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
@@ -39,7 +39,7 @@ jobs:
         run: ./scripts/build-app.sh
 
       - name: Upload app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: EtherDot-app
           path: build/EtherDot.app
