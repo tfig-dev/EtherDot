@@ -13,6 +13,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: StatusItemController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Only one EtherDot may run. A second launch hands over to the first and quits.
+        if SingleInstance.isEnforced, SingleInstance.anotherIsRunning {
+            SingleInstance.askRunningInstanceToShowMenu()
+            NSApp.terminate(nil)
+            return
+        }
         Pref.registerDefaults()
         let demo = CommandLine.arguments.contains("--demo")
         monitor = NetworkMonitor(demo: demo)
@@ -29,16 +35,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.monitor.refresh()
             self?.wifi.scan()
         }
+        SingleInstance.onShowMenuRequest { [weak self] in
+            guard let statusItem = self?.statusItem, !statusItem.isOpen else { return }
+            statusItem.open()
+        }
         SelfCheck.runIfRequested(statusItem: statusItem, settings: settings, monitor: monitor)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
 
+/// Guarantees a single running copy, wherever it was launched from
+/// (/Applications, a build folder, the DMG, a login item).
+@MainActor
+enum SingleInstance {
+    private static let showMenu = Notification.Name("com.tfigueiredo.EtherDot.showMenu")
+
+    /// Test runs (--self-check, --allow-multiple) and un-bundled `swift run` builds are exempt.
+    static var isEnforced: Bool {
+        let arguments = CommandLine.arguments
+        return Bundle.main.bundleIdentifier != nil
+            && !arguments.contains("--self-check") && !arguments.contains("--allow-multiple")
+    }
+
+    static var anotherIsRunning: Bool {
+        guard let identifier = Bundle.main.bundleIdentifier else { return false }
+        let own = ProcessInfo.processInfo.processIdentifier
+        return NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
+            .contains { $0.processIdentifier != own && !$0.isTerminated }
+    }
+
+    static func askRunningInstanceToShowMenu() {
+        DistributedNotificationCenter.default().postNotificationName(showMenu, object: nil, userInfo: nil, deliverImmediately: true)
+    }
+
+    static func onShowMenuRequest(_ handler: @escaping @MainActor () -> Void) {
+        DistributedNotificationCenter.default().addObserver(forName: showMenu, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { handler() }
+        }
+    }
+}
+
 /// Launch arguments used to verify the UI without a person driving the mouse:
 ///   --self-check <dir>   opens the menu, the hover popover and each Settings tab,
 ///                        writes PNG snapshots plus a report.txt into <dir>, then quits.
 ///   --open-menu          opens the menu on launch.
+///   --allow-multiple     lets this copy run next to an already running EtherDot (scripts/perf.sh).
 ///   --demo               shows fixed sample connections (used for the README screenshots).
 ///   --expand-networks    with --self-check, expands "Other Networks" before the menu snapshot.
 @MainActor

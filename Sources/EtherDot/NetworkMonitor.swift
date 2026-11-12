@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Combine
 import Network
 import SystemConfiguration
@@ -38,8 +38,24 @@ final class NetworkMonitor: ObservableObject {
 
     private let pathMonitor = NWPathMonitor()
     private let queue = DispatchQueue(label: "EtherDot.NetworkMonitor")
-    private let store = SCDynamicStoreCreate(nil, "EtherDot" as CFString, nil, nil)
-    private var timer: Timer?
+    private var store: SCDynamicStore?
+    private var wifiEvents: WiFiEventObserver?
+    private var services: [CachedService]?
+    private var refreshScheduled = false
+    private var liveTimer: Timer?
+
+    /// What rarely changes about a network service. Enumerating services reads the
+    /// preferences and the IOKit registry (about 5 ms of CPU), so it is cached and
+    /// only rebuilt when the configuration itself changes.
+    private struct CachedService {
+        let isWiFi: Bool
+        let device: String
+        let serviceID: String?
+        let serviceName: String?
+        let hardwareName: String?
+        let macAddress: String?
+        let interface: SCNetworkInterface
+    }
 
     /// Demo mode shows fixed sample data; it is only used to render the README screenshots.
     private let demo: Bool
@@ -50,16 +66,111 @@ final class NetworkMonitor: ObservableObject {
             loadDemoData()
             return
         }
+        startStoreNotifications()
+        wifiEvents = WiFiEventObserver { [weak self] in
+            Task { @MainActor [weak self] in self?.scheduleRefresh() }
+        }
         pathMonitor.pathUpdateHandler = { [weak self] _ in
-            Task { @MainActor [weak self] in self?.refresh() }
+            Task { @MainActor [weak self] in self?.scheduleRefresh() }
         }
         pathMonitor.start(queue: queue)
-        refresh()
-        let timer = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.services = nil
+                self?.scheduleRefresh()
+            }
+        }
+        // Safety net in case a notification is ever missed: one cheap refresh a minute
+        // (cached services, about half a millisecond of CPU).
+        let safety = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.refresh() }
         }
+        safety.tolerance = 15
+        RunLoop.main.add(safety, forMode: .common)
+        refresh()
+    }
+
+    // MARK: Change notifications (no polling)
+
+    /// configd pushes a message whenever a link, an address, the primary route or the
+    /// service configuration changes. Between changes the app does not wake up at all.
+    private func startStoreNotifications() {
+        var context = SCDynamicStoreContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
+                                            retain: nil, release: nil, copyDescription: nil)
+        let callback: SCDynamicStoreCallBack = { _, changedKeys, info in
+            guard let info else { return }
+            let monitor = Unmanaged<NetworkMonitor>.fromOpaque(info).takeUnretainedValue()
+            let keys = changedKeys as? [String] ?? []
+            MainActor.assumeIsolated { monitor.storeChanged(keys) }
+        }
+        store = SCDynamicStoreCreate(nil, "EtherDot" as CFString, callback, &context)
+        guard let store else { return }
+        let keys = [
+            "State:/Network/Global/IPv4", "State:/Network/Global/IPv6",
+            "State:/Network/Interface", "Setup:/Network/Global/IPv4",
+        ]
+        let patterns = [
+            "State:/Network/Interface/[^/]+/Link", "State:/Network/Interface/[^/]+/IPv4",
+            "State:/Network/Interface/[^/]+/IPv6", "State:/Network/Service/[^/]+/IPv4",
+            "Setup:/Network/Service/[^/]+", "Setup:/Network/Service/[^/]+/Interface",
+        ]
+        SCDynamicStoreSetNotificationKeys(store, keys as CFArray, patterns as CFArray)
+        SCDynamicStoreSetDispatchQueue(store, DispatchQueue.main)
+    }
+
+    private func storeChanged(_ keys: [String]) {
+        // Adapters added or removed, services renamed or reordered: rebuild the cache.
+        if keys.contains(where: { $0.hasPrefix("Setup:") || $0 == "State:/Network/Interface" }) {
+            services = nil
+        }
+        scheduleRefresh()
+    }
+
+    /// Coalesces bursts of notifications (plugging a cable fires several) into one refresh.
+    private func scheduleRefresh() {
+        guard !refreshScheduled else { return }
+        refreshScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            self?.refreshScheduled = false
+            self?.refresh()
+        }
+    }
+
+    /// Signal strength and transmit rate have no change notification, so they are
+    /// only polled while the menu is open.
+    func setLiveUpdates(_ on: Bool) {
+        liveTimer?.invalidate()
+        liveTimer = nil
+        guard on, !demo else { return }
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.refresh() }
+        }
+        timer.tolerance = 0.5
         RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
+        liveTimer = timer
+    }
+
+    private func loadServices() -> [CachedService] {
+        if let services { return services }
+        var loaded: [CachedService] = []
+        for service in Self.currentServices() where SCNetworkServiceGetEnabled(service) {
+            guard let interface = SCNetworkServiceGetInterface(service),
+                  let type = SCNetworkInterfaceGetInterfaceType(interface),
+                  let device = SCNetworkInterfaceGetBSDName(interface) as String? else { continue }
+            let isWiFi = type == kSCNetworkInterfaceTypeIEEE80211
+            guard isWiFi || type == kSCNetworkInterfaceTypeEthernet else { continue }
+            loaded.append(CachedService(
+                isWiFi: isWiFi,
+                device: device,
+                serviceID: SCNetworkServiceGetServiceID(service) as String?,
+                serviceName: SCNetworkServiceGetName(service) as String?,
+                hardwareName: SCNetworkInterfaceGetLocalizedDisplayName(interface) as String?,
+                macAddress: SCNetworkInterfaceGetHardwareAddressString(interface) as String?,
+                interface: interface
+            ))
+        }
+        services = loaded
+        return loaded
     }
 
     private func loadDemoData() {
@@ -72,42 +183,39 @@ final class NetworkMonitor: ObservableObject {
         wifiPowerOn = true
     }
 
+    /// Set ETHERDOT_TRACE=1 to log every refresh; scripts/perf.sh uses it to count them.
+    private static let trace = ProcessInfo.processInfo.environment["ETHERDOT_TRACE"] != nil
+    private var refreshCount = 0
+
     func refresh() {
         guard !demo else { return }
+        if Self.trace {
+            refreshCount += 1
+            FileHandle.standardError.write("refresh \(refreshCount) servicesCached=\(services != nil)\n".data(using: .utf8)!)
+        }
         let addresses = Self.interfaceAddresses()
         let primary = (storeValue("State:/Network/Global/IPv4")?["PrimaryInterface"] as? String)
             ?? (storeValue("State:/Network/Global/IPv6")?["PrimaryInterface"] as? String)
 
         var wired: [ConnectionInfo] = []
-        var wifiService: (name: String?, id: String?, interface: SCNetworkInterface)?
+        let cached = loadServices()
+        let wifiService = cached.first { $0.isWiFi }
 
-        for service in Self.currentServices() where SCNetworkServiceGetEnabled(service) {
-            guard let interface = SCNetworkServiceGetInterface(service),
-                  let type = SCNetworkInterfaceGetInterfaceType(interface),
-                  let device = SCNetworkInterfaceGetBSDName(interface) as String? else { continue }
-            let serviceID = SCNetworkServiceGetServiceID(service) as String?
-            let serviceName = SCNetworkServiceGetName(service) as String?
-
-            if type == kSCNetworkInterfaceTypeIEEE80211 {
-                wifiService = (serviceName, serviceID, interface)
-                continue
-            }
-            guard type == kSCNetworkInterfaceTypeEthernet else { continue }
+        for service in cached where !service.isWiFi {
+            let device = service.device
             let linkActive = storeValue("State:/Network/Interface/\(device)/Link")?["Active"] as? Bool ?? false
             guard linkActive else { continue }
-
-            let hardware = SCNetworkInterfaceGetLocalizedDisplayName(interface) as String?
             let own = addresses[device] ?? []
             wired.append(ConnectionInfo(
                 kind: .ethernet,
-                name: ConnectionLabel.ethernet(serviceName: serviceName, hardwareName: hardware, interfaceName: device),
+                name: ConnectionLabel.ethernet(serviceName: service.serviceName, hardwareName: service.hardwareName, interfaceName: device),
                 state: .resolve(linkActive: true, addresses: own),
                 interfaceName: device,
-                hardwareName: hardware,
+                hardwareName: service.hardwareName,
                 addresses: own,
-                router: router(serviceID: serviceID),
-                macAddress: SCNetworkInterfaceGetHardwareAddressString(interface) as String?,
-                speed: Self.mediaSubtype(interface),
+                router: router(serviceID: service.serviceID),
+                macAddress: service.macAddress,
+                speed: Self.mediaSubtype(service.interface),
                 isPrimary: device == primary
             ))
         }
@@ -126,10 +234,10 @@ final class NetworkMonitor: ObservableObject {
                 name: ConnectionLabel.wifi(ssid: client.ssid()),
                 state: state,
                 interfaceName: device,
-                hardwareName: wifiService?.name,
+                hardwareName: wifiService?.serviceName,
                 addresses: associated ? own : [],
-                router: associated ? router(serviceID: wifiService?.id) : nil,
-                macAddress: client.hardwareAddress(),
+                router: associated ? router(serviceID: wifiService?.serviceID) : nil,
+                macAddress: wifiService?.macAddress,
                 isPrimary: device == primary,
                 signal: associated ? client.rssiValue() : nil,
                 channel: associated ? Self.describe(client.wlanChannel()) : nil,
@@ -217,4 +325,23 @@ final class NetworkMonitor: ObservableObject {
         }
         return result.mapValues { Array(Set($0)).sorted() }
     }
+}
+
+/// Forwards CoreWLAN change events (network joined or left, radio switched on or off).
+final class WiFiEventObserver: NSObject, CWEventDelegate {
+    private let onChange: () -> Void
+
+    init(onChange: @escaping () -> Void) {
+        self.onChange = onChange
+        super.init()
+        let client = CWWiFiClient.shared()
+        client.delegate = self
+        for event in [CWEventType.ssidDidChange, .powerDidChange, .linkDidChange] {
+            try? client.startMonitoringEvent(with: event)
+        }
+    }
+
+    func ssidDidChangeForWiFiInterface(withName interfaceName: String) { onChange() }
+    func powerStateDidChangeForWiFiInterface(withName interfaceName: String) { onChange() }
+    func linkDidChangeForWiFiInterface(withName interfaceName: String) { onChange() }
 }
