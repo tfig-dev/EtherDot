@@ -154,6 +154,7 @@ final class StatusItemController: NSObject, NSWindowDelegate {
 
     func open() {
         monitor.refresh()
+        monitor.setLiveUpdates(true)
         launchAtLogin.refresh()
         wifi.scan()
         hosting.layoutSubtreeIfNeeded()
@@ -171,6 +172,7 @@ final class StatusItemController: NSObject, NSWindowDelegate {
         guard isOpen else { return }
         hideDetails()
         hoveredID = nil
+        monitor.setLiveUpdates(false)
         panel.orderOut(nil)
         statusItem.button?.highlight(false)
         if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor) }

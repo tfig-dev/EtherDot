@@ -115,6 +115,27 @@ installs it. You can turn automatic checks off, or turn automatic installation o
 
 If you installed with Homebrew, `brew upgrade --cask etherdot` works too.
 
+## Performance
+
+EtherDot is event-driven: it does no work until the network changes, and uses about 0.03% of one CPU
+core while idle. Measurements, method and design notes are in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+
+## Known issues and limitations
+
+- **Unsigned build.** There is no Apple Developer ID signature yet, so the first launch needs
+  "Open Anyway" (see [First launch](#first-launch-unsigned-build)).
+- **Wi-Fi names need Location permission.** Without it the Wi-Fi row reads "Wi-Fi network" and the
+  list of nearby networks stays empty. Because the build is ad-hoc signed, macOS may ask again after
+  an update.
+- **No Personal Hotspot section.** macOS has no public API for it.
+- **Joining networks.** Open networks and networks whose password is already saved join directly;
+  anything that needs a password typed opens Wi-Fi Settings.
+- **Not yet verified on real hardware:** switching to the RJ45 icon when a cable is plugged in, and
+  the reaction to live network changes since 1.0.1, were tested with unit tests and sample data only.
+- **Live traffic and adapter detection** are not in this version; see [ROADMAP.md](ROADMAP.md).
+
+Release history is in [CHANGELOG.md](CHANGELOG.md).
+
 ## Building from source
 
 You need macOS 13 or later with Xcode 16 or later, or just the Xcode Command Line Tools.
@@ -124,6 +145,7 @@ git clone https://github.com/tfig-dev/EtherDot.git
 cd EtherDot
 ./scripts/test.sh          # unit tests
 ./scripts/build-app.sh     # builds build/EtherDot.app (universal, ad-hoc signed)
+./scripts/perf.sh          # idle CPU, wake-ups and memory of the built app
 open build/EtherDot.app
 ```
 
@@ -147,13 +169,14 @@ swift run IconGenerator .            # regenerate the app icon, menu bar icon an
 | `scripts/` | Build, test, DMG and cask scripts used locally and by CI |
 | `Casks/etherdot.rb` | Homebrew cask |
 | `VERSION` | The version number, in one place |
+| `CHANGELOG.md`, `ROADMAP.md`, `docs/PERFORMANCE.md` | Release history, planned work, performance notes |
 
 ## Making a release
 
 The version lives in the `VERSION` file and nowhere else. Releases follow
 [semantic versioning](https://semver.org).
 
-1. Change `VERSION` (for example to `1.1.0`), commit and push to `main`.
+1. Change `VERSION` (for example to `1.1.0`), add the changes to `CHANGELOG.md`, commit and push to `main`.
 2. Tag and push:
 
    ```bash
