@@ -1,0 +1,136 @@
+name: Release
+
+# Push a tag like v1.2.3 (matching the VERSION file) to publish a release.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, sign and publish
+    runs-on: macos-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      APPSTORE_API_KEY_P8: ${{ secrets.APPSTORE_API_KEY_P8 }}
+      APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+      APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+      SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check that the tag matches VERSION
+        run: |
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match VERSION ($VERSION). Bump VERSION, commit, then tag."
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Test
+        run: ./scripts/test.sh
+
+      # Signing is optional: without the certificate secrets the build is ad-hoc signed.
+      - name: Import Developer ID certificate
+        if: env.MACOS_CERTIFICATE_P12 != ''
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$MACOS_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | grep 'Developer ID Application' | head -1 | sed -E 's/.*"(.*)"/\1/')"
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::The .p12 does not contain a Developer ID Application certificate."
+            exit 1
+          fi
+          echo "CODESIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          rm -f "$RUNNER_TEMP/certificate.p12"
+
+      - name: Prepare notarization key
+        if: env.CODESIGN_IDENTITY != '' && env.APPSTORE_API_KEY_P8 != ''
+        run: |
+          echo "$APPSTORE_API_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
+          echo "NOTARY_KEY_PATH=$RUNNER_TEMP/AuthKey.p8" >> "$GITHUB_ENV"
+          echo "NOTARY_KEY_ID=$APPSTORE_API_KEY_ID" >> "$GITHUB_ENV"
+          echo "NOTARY_ISSUER_ID=$APPSTORE_API_ISSUER_ID" >> "$GITHUB_ENV"
+
+      - name: Build app
+        run: ./scripts/build-app.sh
+
+      - name: Build DMG (signs, notarizes and staples when credentials exist)
+        run: ./scripts/make-dmg.sh
+
+      - name: Generate and sign the Sparkle appcast
+        if: env.SPARKLE_PRIVATE_KEY != ''
+        run: |
+          mkdir -p build/appcast
+          cp "dist/EtherDot-$VERSION.dmg" build/appcast/
+          echo "$SPARKLE_PRIVATE_KEY" | .build/artifacts/sparkle/Sparkle/bin/generate_appcast \
+            --ed-key-file - \
+            --download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/" \
+            --full-release-notes-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME" \
+            --link "https://github.com/$GITHUB_REPOSITORY" \
+            -o dist/appcast.xml \
+            build/appcast
+          grep -q 'sparkle:edSignature' dist/appcast.xml || { echo "::error::appcast.xml is not signed"; exit 1; }
+          cat dist/appcast.xml
+
+      - name: Warn when there is no appcast
+        if: env.SPARKLE_PRIVATE_KEY == ''
+        run: echo "::warning::SPARKLE_PRIVATE_KEY is not set, so no appcast was published. In-app updates will not see this release."
+
+      - name: Publish GitHub Release
+        run: |
+          ASSETS=("dist/EtherDot-$VERSION.dmg")
+          [ -f dist/appcast.xml ] && ASSETS+=(dist/appcast.xml)
+          gh release create "$GITHUB_REF_NAME" "${ASSETS[@]}" \
+            --title "EtherDot $VERSION" --generate-notes --verify-tag
+
+      - name: Update Homebrew cask
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B cask-update origin/main
+          ./scripts/update-cask.sh
+          if git diff --quiet -- Casks/etherdot.rb; then
+            echo "Cask already up to date"
+          else
+            git commit -m "Update Homebrew cask to $VERSION" -- Casks/etherdot.rb
+            git push origin HEAD:main
+          fi
+
+      - name: Summary
+        run: |
+          {
+            echo "## EtherDot $VERSION"
+            echo "- Signed with Developer ID: $([ -n "${CODESIGN_IDENTITY:-}" ] && echo yes || echo 'no (ad-hoc)')"
+            echo "- Notarized: $([ -n "${NOTARY_KEY_PATH:-}" ] && echo yes || echo no)"
+            echo "- Appcast: $([ -f dist/appcast.xml ] && echo published || echo skipped)"
+            echo "- SHA-256: $(shasum -a 256 "dist/EtherDot-$VERSION.dmg" | awk '{print $1}')"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove signing keychain
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/AuthKey.p8"

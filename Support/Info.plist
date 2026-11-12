@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>EtherDot</string>
+	<key>CFBundleExecutable</key>
+	<string>EtherDot</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.tfigueiredo.EtherDot</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>EtherDot</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<!-- Both version keys are filled in from the VERSION file by scripts/build-app.sh. -->
+	<key>CFBundleShortVersionString</key>
+	<string>__VERSION__</string>
+	<key>CFBundleVersion</key>
+	<string>__VERSION__</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 Tiago Figueiredo</string>
+	<key>NSLocationUsageDescription</key>
+	<string>macOS requires Location access before an app can read the name of the connected Wi-Fi network. EtherDot does not read or store your location.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>macOS requires Location access before an app can read the name of the connected Wi-Fi network. EtherDot does not read or store your location.</string>
+	<key>EDRepositoryURL</key>
+	<string>https://github.com/tfig-dev/EtherDot</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/tfig-dev/EtherDot/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>brnmu96FsEHWTDDytNHDwbM0twbUBAaPvcfuIRuyHa8=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+</dict>
+</plist>
