@@ -70,8 +70,15 @@ brew tap tfig-dev/etherdot https://github.com/tfig-dev/EtherDot
 ```
 
 ```bash
+brew trust tfig-dev/etherdot
+```
+
+```bash
 brew install --cask etherdot
 ```
+
+The `brew trust` step is only needed on recent Homebrew versions, which refuse casks from third-party
+taps until you trust them.
 
 The cask lives in this repository (`Casks/etherdot.rb`) and is updated by the release pipeline.
 
