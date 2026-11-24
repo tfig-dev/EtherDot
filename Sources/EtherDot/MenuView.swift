@@ -22,8 +22,6 @@ struct MenuView: View {
     @ObservedObject var monitor: NetworkMonitor
     @ObservedObject var wifi: WiFiController
     @ObservedObject var location: LocationPermission
-    @ObservedObject var launchAtLogin: LaunchAtLogin
-    @ObservedObject var updater: Updater
     @ObservedObject var model: MenuModel
 
     static let width: CGFloat = 296
@@ -35,10 +33,6 @@ struct MenuView: View {
             wifiSection
             MenuDivider()
             MenuActionRow(title: "Network Settings…") { act(SystemSettings.openNetwork) }
-            MenuActionRow(title: "Wi-Fi Settings…") { act(SystemSettings.openWiFi) }
-            MenuDivider()
-            MenuActionRow(title: "Launch at Login", checked: launchAtLogin.enabled) { launchAtLogin.toggle() }
-            MenuActionRow(title: "Check for Updates…", enabled: updater.isAvailable) { act(updater.checkForUpdates) }
             MenuActionRow(title: "Settings…", shortcut: "⌘,") { act(model.onOpenSettings) }
             MenuDivider()
             MenuActionRow(title: "Quit EtherDot", shortcut: "⌘Q") { NSApp.terminate(nil) }

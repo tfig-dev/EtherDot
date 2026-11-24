@@ -27,11 +27,13 @@ final class WiFiController: ObservableObject {
 
     init(demo: Bool = false) {
         self.demo = demo
+        #if DEBUG
         if demo {
             known = [WiFiNetwork(ssid: "Office", rssi: -61, secure: true, known: true)]
             other = [("Cafe Guest", -70, false), ("Library", -78, true), ("Neighbour 5G", -83, true)]
                 .map { WiFiNetwork(ssid: $0.0, rssi: $0.1, secure: $0.2, known: false) }
         }
+        #endif
     }
 
     func scan() {
@@ -65,6 +67,7 @@ final class WiFiController: ObservableObject {
     }
 
     func setPower(_ on: Bool) {
+        guard !demo else { return }  // demo data must never switch the real Wi-Fi
         do {
             try CWWiFiClient.shared().interface()?.setPower(on)
         } catch {
@@ -75,6 +78,7 @@ final class WiFiController: ObservableObject {
     /// Joins open networks and networks whose password is already in the keychain.
     /// Anything that needs a password typed is handed to Wi-Fi Settings.
     func join(_ network: WiFiNetwork, completion: @escaping () -> Void) {
+        guard !demo else { return }
         guard let target = scanned[network.ssid], let interface = CWWiFiClient.shared().interface() else {
             SystemSettings.openWiFi()
             return

@@ -92,21 +92,7 @@ public enum AppIconArtwork {
         NSColor.white.withAlphaComponent(0.16).setStroke()
         highlight.stroke()
 
-        // Link LED: sits behind the plug, glowing out from under its lower-right corner.
-        let center = NSPoint(x: 706, y: 338), radius: CGFloat = 112
-        let dot = NSRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
-        NSGraphicsContext.saveGraphicsState()
-        bodyPath().addClip()
-        let glow = NSShadow()
-        glow.shadowColor = rgb(0x34D058, 0.8)
-        glow.shadowBlurRadius = 70
-        glow.set()
-        rgb(0x34D058).setFill()
-        NSBezierPath(ovalIn: dot).fill()
-        NSGraphicsContext.restoreGraphicsState()
-        NSGradient(starting: rgb(0x6BEA88), ending: rgb(0x22B14C))?.draw(in: NSBezierPath(ovalIn: dot), angle: -90)
-
-        // Plug, in front of the LED.
+        // Plug.
         let slots: [CGFloat] = simplified ? [398, 512, 626] : [356, 434, 512, 590, 668]
         let port = RJ45Glyph.portPath(left: 282, right: 742, top: 712, shoulder: 446, bottom: 332,
                                       notchLeft: 392, notchRight: 632,
@@ -125,6 +111,21 @@ public enum AppIconArtwork {
         port.stroke()
         NSGraphicsContext.current?.cgContext.endTransparencyLayer()
         NSGraphicsContext.restoreGraphicsState()
+
+        // Link LED: sits in front of the plug, over its lower-right corner.
+        let center = NSPoint(x: 700, y: 352), radius: CGFloat = 92
+        let dot = NSRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
+        NSGraphicsContext.saveGraphicsState()
+        bodyPath().addClip()
+        let glow = NSShadow()
+        glow.shadowColor = rgb(0x34D058, 0.8)
+        glow.shadowBlurRadius = 70
+        glow.set()
+        rgb(0x34D058).setFill()
+        NSBezierPath(ovalIn: dot).fill()
+        NSGraphicsContext.restoreGraphicsState()
+        NSGradient(starting: rgb(0x6BEA88), ending: rgb(0x22B14C))?.draw(in: NSBezierPath(ovalIn: dot), angle: -90)
+
     }
 
     public static func bitmap(pixels: Int) -> NSBitmapImageRep {

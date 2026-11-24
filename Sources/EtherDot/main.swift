@@ -20,15 +20,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         Pref.registerDefaults()
+        #if DEBUG
         let demo = CommandLine.arguments.contains("--demo")
+        #else
+        let demo = false
+        #endif
         monitor = NetworkMonitor(demo: demo)
         wifi = WiFiController(demo: demo)
         location = LocationPermission(demo: demo)
         launchAtLogin = LaunchAtLogin()
         updater = Updater()
         settings = SettingsWindowController(monitor: monitor, location: location, launchAtLogin: launchAtLogin, updater: updater)
-        statusItem = StatusItemController(monitor: monitor, wifi: wifi, location: location,
-                                          launchAtLogin: launchAtLogin, updater: updater) { [weak self] in
+        statusItem = StatusItemController(monitor: monitor, wifi: wifi, location: location) { [weak self] in
             self?.settings.show()
         }
         location.onChange = { [weak self] in
@@ -39,7 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let statusItem = self?.statusItem, !statusItem.isOpen else { return }
             statusItem.open()
         }
+        #if DEBUG
         SelfCheck.runIfRequested(statusItem: statusItem, settings: settings, monitor: monitor)
+        #endif
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -76,20 +81,20 @@ enum SingleInstance {
     }
 }
 
-/// Launch arguments used to verify the UI without a person driving the mouse:
+#if DEBUG
+/// Debug-build launch arguments used to verify the UI without a person driving the mouse
+/// (scripts/self-check.sh). None of this is compiled into release builds.
 ///   --self-check <dir>   opens the menu, the hover popover and each Settings tab,
 ///                        writes PNG snapshots plus a report.txt into <dir>, then quits.
-///   --open-menu          opens the menu on launch.
-///   --allow-multiple     lets this copy run next to an already running EtherDot (scripts/perf.sh).
 ///   --demo               shows fixed sample connections (used for the README screenshots).
 ///   --expand-networks    with --self-check, expands "Other Networks" before the menu snapshot.
+///   --test-login-item    with --self-check, switches Launch at Login on and back off.
+/// Available in every build: --allow-multiple lets this copy run next to an already
+/// running EtherDot (scripts/perf.sh).
 @MainActor
 enum SelfCheck {
     static func runIfRequested(statusItem: StatusItemController, settings: SettingsWindowController, monitor: NetworkMonitor) {
         let arguments = CommandLine.arguments
-        if arguments.contains("--open-menu") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { statusItem.open() }
-        }
         guard let index = arguments.firstIndex(of: "--self-check"), arguments.indices.contains(index + 1) else { return }
         let directory = URL(fileURLWithPath: arguments[index + 1])
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -178,6 +183,8 @@ enum SelfCheck {
         try? Canvas.writePNG(output, to: url)
     }
 }
+
+#endif
 
 MainActor.assumeIsolated {
     let app = NSApplication.shared
