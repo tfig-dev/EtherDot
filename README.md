@@ -24,6 +24,10 @@
 macOS shows a Wi-Fi icon in the menu bar even when your traffic is going over a cable. EtherDot fixes
 that: plug in Ethernet and the icon becomes an RJ45 port; unplug it and it turns back into the Wi-Fi icon.
 
+<p align="center">
+  <img src="docs/menubar-icons.png" width="560" alt="EtherDot menu bar icons: an RJ45 port when Ethernet is connected, the Wi-Fi icon otherwise, in light and dark menu bars">
+</p>
+
 ## Features
 
 - **Honest menu bar icon.** Ethernet connected: an RJ45 port. Only Wi-Fi connected: the standard Wi-Fi
@@ -33,17 +37,19 @@ that: plug in Ethernet and the icon becomes an RJ45 port; unplug it and it turns
 - **Details on hover.** Rest the pointer on a connection to see status, interface, IP addresses, router,
   link speed, signal, channel and MAC address in a popover beside the menu, on whichever side of the
   screen has the most room.
-- **A familiar Wi-Fi section.** On/off switch, known networks, other networks and a shortcut to Wi-Fi
-  Settings, laid out like the system Wi-Fi menu.
-- **Launch at login**, from the menu or from Settings.
+- **A familiar Wi-Fi section.** On/off switch, known networks and other networks, laid out like the
+  system Wi-Fi menu.
+- **Launch at login**, in Settings › General.
 - **Built-in updates** through [Sparkle](https://sparkle-project.org), served from this repository's
-  GitHub Releases.
-- **Compact and native.** One small menu, a three-tab Settings window, no Dock icon.
+  GitHub Releases. Check by hand in Settings › Updates or About.
+- **Light on resources.** Event-driven, no polling: about 0.03% of one CPU core while idle, checked
+  by CI on every change.
+- **Compact and native.** A short menu, a three-tab Settings window, no Dock icon.
 
-Coming soon in v1.1:
+Coming soon:
 
-- 🔜 **Network adapters**: detect USB hubs, docks and Wi-Fi dongles as they are plugged in and add them to the app.
-- 🔜 **Live traffic**: upload and download speed, refreshed every second, in the menu and optionally next to the icon.
+- **Network adapters**: detect USB hubs, docks and Wi-Fi dongles as they are plugged in and add them to the app.
+- **Live traffic**: upload and download speed, refreshed every second, in the menu and optionally next to the icon.
 
 <p align="center">
   <img src="docs/screenshots/settings-general.png" width="400" alt="Settings: General">
@@ -122,16 +128,16 @@ core while idle. Measurements, method and design notes are in [docs/PERFORMANCE.
 
 ## Known issues and limitations
 
-- **Unsigned build.** There is no Apple Developer ID signature yet, so the first launch needs
-  "Open Anyway" (see [First launch](#first-launch-unsigned-build)).
+- **No Apple Developer ID signature.** Releases are signed with EtherDot's own self-signed
+  certificate, which Gatekeeper does not recognise, so the first launch needs "Open Anyway"
+  (see [First launch](#first-launch-unsigned-build)).
 - **Wi-Fi names need Location permission.** Without it the Wi-Fi row reads "Wi-Fi network" and the
-  list of nearby networks stays empty. Because the build is ad-hoc signed, macOS may ask again after
-  an update.
+  list of nearby networks stays empty. Up to 1.0.1 builds were ad-hoc signed, so macOS asked again
+  after every update. From 1.1.0 the signing identity is stable: you approve it once more when
+  updating to 1.1.0, and then it stays.
 - **No Personal Hotspot section.** macOS has no public API for it.
 - **Joining networks.** Open networks and networks whose password is already saved join directly;
   anything that needs a password typed opens Wi-Fi Settings.
-- **Not yet verified on real hardware:** switching to the RJ45 icon when a cable is plugged in, and
-  the reaction to live network changes since 1.0.1, were tested with unit tests and sample data only.
 - **Live traffic and adapter detection** are not in this version; see [ROADMAP.md](ROADMAP.md).
 
 Release history is in [CHANGELOG.md](CHANGELOG.md).
@@ -144,8 +150,8 @@ You need macOS 13 or later with Xcode 16 or later, or just the Xcode Command Lin
 git clone https://github.com/tfig-dev/EtherDot.git
 cd EtherDot
 ./scripts/test.sh          # unit tests
-./scripts/build-app.sh     # builds build/EtherDot.app (universal, ad-hoc signed)
-./scripts/perf.sh          # idle CPU, wake-ups and memory of the built app
+./scripts/build-app.sh     # builds build/EtherDot.app (universal, release configuration)
+./scripts/perf.sh          # idle CPU and refreshes of the built app, against the CI budget
 open build/EtherDot.app
 ```
 
@@ -154,7 +160,9 @@ Optional extras:
 ```bash
 ARCHS=arm64 ./scripts/build-app.sh   # faster, single-architecture build
 brew install create-dmg && ./scripts/make-dmg.sh   # dist/EtherDot-<version>.dmg
-swift run IconGenerator .            # regenerate the app icon, menu bar icon and DMG background
+swift run IconGenerator .            # regenerate the app icon, menu bar icons and DMG background
+./scripts/self-check.sh --demo       # debug build drives its own menu and Settings, writes snapshots
+./scripts/self-check.sh --screenshots   # same, and refreshes the README screenshots
 ```
 
 ### Project layout
@@ -166,7 +174,7 @@ swift run IconGenerator .            # regenerate the app icon, menu bar icon an
 | `Sources/IconGenerator` | Renders `Assets/` (AppIcon asset catalog, `.icns`, menu bar template) and the DMG background |
 | `Tests/EtherDotCoreTests` | Unit tests |
 | `Support/` | `Info.plist` template and entitlements |
-| `scripts/` | Build, test, DMG and cask scripts used locally and by CI |
+| `scripts/` | Build, test, performance, self-check, DMG and cask scripts used locally and by CI |
 | `Casks/etherdot.rb` | Homebrew cask |
 | `VERSION` | The version number, in one place |
 | `CHANGELOG.md`, `ROADMAP.md`, `docs/PERFORMANCE.md` | Release history, planned work, performance notes |
@@ -183,10 +191,10 @@ The version lives in the `VERSION` file and nowhere else. Releases follow
    git tag v1.1.0 && git push origin v1.1.0
    ```
 
-3. The **Release** workflow then runs the tests, builds the universal app, signs and notarizes it when
-   signing secrets are configured (otherwise it ships an unsigned DMG), packages the DMG, generates and
-   signs the Sparkle appcast, publishes a GitHub Release with auto-generated notes, and updates the
-   Homebrew cask.
+3. The **Release** workflow then runs the tests, builds the universal app, checks the idle performance
+   budget, signs it (Developer ID and notarization when configured, otherwise the self-signed
+   certificate), packages the DMG, generates and signs the Sparkle appcast, publishes a GitHub Release
+   with auto-generated notes, and updates the Homebrew cask.
 
 The tag must match `VERSION`; the workflow stops if it does not.
 
@@ -203,8 +211,17 @@ All signing material lives in **GitHub › Settings › Secrets and variables �
 | `APPSTORE_API_KEY_ID` | Notarization | The key's ID in App Store Connect |
 | `APPSTORE_API_ISSUER_ID` | Notarization | The Issuer ID shown above the keys list |
 
-Only `SPARKLE_PRIVATE_KEY` is needed for unsigned releases. Without the certificate secrets the pipeline
-still publishes an unsigned DMG; without the Sparkle key it publishes the DMG but no appcast.
+Without Developer ID, releases are signed with a self-signed certificate:
+
+| Secret | Needed for | Where it comes from |
+| --- | --- | --- |
+| `SELF_SIGNED_CERT_P12` | Stable code identity, so macOS keeps the Location permission across updates | Base64 of the "EtherDot Self-Signed" certificate exported as `.p12` (it is in the maintainer's login keychain) |
+| `SELF_SIGNED_CERT_PASSWORD` | The same | The password chosen when exporting that `.p12` |
+
+Developer ID takes priority when its secrets are set. Only `SPARKLE_PRIVATE_KEY` is strictly needed for
+a release. Without the certificate secrets the pipeline
+still publishes a DMG (self-signed, or ad-hoc if that certificate is missing too); without the
+Sparkle key it publishes the DMG but no appcast.
 
 ## Author
 

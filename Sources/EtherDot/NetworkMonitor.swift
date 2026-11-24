@@ -173,6 +173,7 @@ final class NetworkMonitor: ObservableObject {
         return loaded
     }
 
+    #if DEBUG
     private func loadDemoData() {
         ethernet = [ConnectionInfo(kind: .ethernet, name: "USB 10/100/1000 LAN", state: .connected, interfaceName: "en7",
                                    addresses: ["192.168.1.24", "2001:db8:1f:7d00:1c2a:46cf:88c4:8afa"], router: "192.168.1.1",
@@ -182,6 +183,9 @@ final class NetworkMonitor: ObservableObject {
                               signal: -52, channel: "44 (5 GHz)", security: "WPA3 Personal", transmitRate: 866)
         wifiPowerOn = true
     }
+    #else
+    private func loadDemoData() {}
+    #endif
 
     /// Set ETHERDOT_TRACE=1 to log every refresh; scripts/perf.sh uses it to count them.
     private static let trace = ProcessInfo.processInfo.environment["ETHERDOT_TRACE"] != nil

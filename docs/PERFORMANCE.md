@@ -14,6 +14,22 @@ The script launches the app, waits for it to settle, then reports CPU time used,
 idle wake-ups, memory and the number of refreshes over the interval. Run it with the menu closed and
 without touching the network.
 
+It exits with an error when the app goes over budget, which can be changed per run:
+
+| Budget | Default | Variable |
+| --- | --- | --- |
+| CPU while idle | 0.1% of one core | `MAX_CPU_PERCENT` |
+| Refreshes while idle | 2 per minute | `MAX_REFRESHES_PER_MIN` |
+
+## In CI
+
+The CI workflow (every push and pull request) and the release workflow both run
+`scripts/perf.sh build/EtherDot.app 120` after building the app. A run over budget fails the job, and
+a release over budget is never published. The numbers appear in the job summary.
+
+GitHub's macOS runners are virtual machines without Wi-Fi hardware and are noisier than a real Mac,
+which is why the budget is about three times the cost measured locally.
+
 ## Results
 
 Measured on an Apple silicon Mac running macOS 26, Wi-Fi connected, menu closed.
@@ -65,12 +81,11 @@ For live traffic (planned for 1.1) the direct system call is the right tool: `sy
 `NET_RT_IFLIST2` returns the byte counters of every interface in about 38 µs, roughly 0.004% of a
 core at one read per second. The app will not use `nettop` or the private NetworkStatistics framework.
 
-## Not yet verified
+## Checking reactions to network changes
 
-The change notifications were confirmed to register, but a real network change (plugging a cable,
-switching Wi-Fi network, turning Wi-Fi off) could not be triggered during testing without
-disconnecting the machine. If a notification were missed, the minute safety refresh would correct
-the display within 60 seconds. To check by hand:
+Plugging an Ethernet cable was confirmed on real hardware after 1.0.1. If a notification were ever
+missed, the minute safety refresh would correct the display within 60 seconds. To watch the
+refreshes by hand:
 
 ```bash
 ETHERDOT_TRACE=1 /Applications/EtherDot.app/Contents/MacOS/EtherDot --allow-multiple

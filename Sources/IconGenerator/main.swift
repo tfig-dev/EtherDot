@@ -121,4 +121,38 @@ let sheet = Canvas.bitmap(pixelsWide: 1240, pixelsHigh: 720, pointSize: NSSize(w
 }
 try Canvas.writePNG(sheet, to: root.appendingPathComponent("design/previews/app-icon-refined.png"))
 
+// MARK: README image of the menu bar icons (light and dark menu bars)
+
+func wifiSymbol(color: NSColor) -> NSImage {
+    let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+    let symbol = NSImage(systemSymbolName: "wifi", accessibilityDescription: nil)!.withSymbolConfiguration(config)!
+    return NSImage(size: symbol.size, flipped: false) { rect in
+        symbol.draw(in: rect)
+        color.set()
+        rect.fill(using: .sourceAtop)
+        return true
+    }
+}
+
+let barSize = NSSize(width: 560, height: 150)
+let bars = Canvas.bitmap(pixelsWide: 1120, pixelsHigh: 300, pointSize: barSize) {
+    for (index, dark) in [false, true].enumerated() {
+        let panel = NSRect(x: CGFloat(index) * 280, y: 0, width: 280, height: 150)
+        (dark ? rgb(0x22252B) : rgb(0xE6E9EF)).setFill()
+        panel.fill()
+        let ink = dark ? NSColor.white : rgb(0x15171C)
+        let muted = ink.withAlphaComponent(0.6)
+        // Menu bar strip
+        (dark ? rgb(0x30333A) : rgb(0xF6F7F9)).setFill()
+        NSBezierPath(roundedRect: NSRect(x: panel.minX + 20, y: 86, width: 240, height: 30), xRadius: 8, yRadius: 8).fill()
+        RJ45Glyph.draw(in: NSRect(x: panel.minX + 62, y: 92, width: 18, height: 18), color: ink)
+        let wifi = wifiSymbol(color: ink)
+        wifi.draw(in: NSRect(x: panel.minX + 190 - wifi.size.width / 2, y: 101 - wifi.size.height / 2, width: wifi.size.width, height: wifi.size.height))
+        text("Ethernet connected", in: NSRect(x: panel.minX + 6, y: 56, width: 130, height: 16), color: muted, size: 11)
+        text("Wi-Fi only", in: NSRect(x: panel.minX + 140, y: 56, width: 100, height: 16), color: muted, size: 11)
+        text(dark ? "Dark menu bar" : "Light menu bar", in: NSRect(x: panel.minX, y: 18, width: 280, height: 16), color: muted, size: 11, weight: .medium)
+    }
+}
+try Canvas.writePNG(bars, to: root.appendingPathComponent("docs/menubar-icons.png"))
+
 print("Artwork written to \(root.path)")

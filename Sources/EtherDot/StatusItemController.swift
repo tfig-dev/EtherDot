@@ -30,7 +30,6 @@ final class StatusItemController: NSObject, NSWindowDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let monitor: NetworkMonitor
     private let wifi: WiFiController
-    private let launchAtLogin: LaunchAtLogin
     private let model = MenuModel()
     private let panel: MenuPanel
     private let hosting: NSHostingView<MenuView>
@@ -44,13 +43,11 @@ final class StatusItemController: NSObject, NSWindowDelegate {
     var isOpen: Bool { panel.isVisible }
 
     init(monitor: NetworkMonitor, wifi: WiFiController, location: LocationPermission,
-         launchAtLogin: LaunchAtLogin, updater: Updater, openSettings: @escaping () -> Void) {
+         openSettings: @escaping () -> Void) {
         self.monitor = monitor
         self.wifi = wifi
-        self.launchAtLogin = launchAtLogin
 
-        hosting = NSHostingView(rootView: MenuView(monitor: monitor, wifi: wifi, location: location,
-                                                   launchAtLogin: launchAtLogin, updater: updater, model: model))
+        hosting = NSHostingView(rootView: MenuView(monitor: monitor, wifi: wifi, location: location, model: model))
         panel = MenuPanel(contentRect: NSRect(x: 0, y: 0, width: MenuView.width, height: 300),
                           styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         super.init()
@@ -155,7 +152,6 @@ final class StatusItemController: NSObject, NSWindowDelegate {
     func open() {
         monitor.refresh()
         monitor.setLiveUpdates(true)
-        launchAtLogin.refresh()
         wifi.scan()
         hosting.layoutSubtreeIfNeeded()
         resize(to: hosting.fittingSize)
@@ -269,7 +265,8 @@ final class StatusItemController: NSObject, NSWindowDelegate {
         controller.rootView = DetailsView(connection: connection)
     }
 
-    /// Test hook: frames of the on-screen windows, for the self-check launch arguments.
+    #if DEBUG
+    /// Test hooks for the self-check launch arguments (debug builds only).
     var debugDescription_: String {
         let popoverFrame = popover.isShown ? popover.contentViewController?.view.window?.frame : nil
         return "panel=\(panel.frame) popover=\(String(describing: popoverFrame)) side=\(String(describing: lastPopoverSide)) details=\(shownDetailsID ?? "-")"
@@ -284,7 +281,6 @@ final class StatusItemController: NSObject, NSWindowDelegate {
     }
 
     var firstHoverableID: String? { monitor.activeEthernet?.id ?? monitor.ethernet.first?.id ?? monitor.wifi?.id }
-    var panelWindowNumber: Int { panel.windowNumber }
-    var popoverWindow: NSWindow? { popover.isShown ? popover.contentViewController?.view.window : nil }
     var panelWindow: NSWindow { panel }
+    #endif
 }

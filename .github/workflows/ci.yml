@@ -38,6 +38,11 @@ jobs:
       - name: Build app bundle
         run: ./scripts/build-app.sh
 
+      # Fails the build if the app costs more than 0.1% of a core or refreshes more
+      # than twice a minute while idle. See docs/PERFORMANCE.md.
+      - name: Idle performance budget
+        run: ./scripts/perf.sh build/EtherDot.app 120
+
       - name: Upload app
         uses: actions/upload-artifact@v7
         with:
